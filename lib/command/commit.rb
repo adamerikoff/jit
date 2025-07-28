@@ -11,8 +11,8 @@ module Command
       root.traverse { |tree| repo.database.store(tree) }
 
       parent  = repo.refs.read_head
-      name    = @env.fetch("GIT_AUTHOR_NAME", "unknown")
-      email   = @env.fetch("GIT_AUTHOR_EMAIL", "unknown@xyz.com")
+      name    = @env.fetch("GIT_AUTHOR_NAME")
+      email   = @env.fetch("GIT_AUTHOR_EMAIL")
       author  = Database::Author.new(name, email, Time.now)
       message = @stdin.read
 
