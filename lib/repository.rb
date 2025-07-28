@@ -2,6 +2,7 @@ require_relative "./database"
 require_relative "./index"
 require_relative "./refs"
 require_relative "./workspace"
+require_relative "./repository/status"
 
 class Repository
   def initialize(git_path)
@@ -18,6 +19,10 @@ class Repository
 
   def refs
     @refs ||= Refs.new(@git_path)
+  end
+
+  def status
+    Status.new(self)
   end
 
   def workspace
