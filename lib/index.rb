@@ -18,6 +18,11 @@ class Index
     clear
   end
 
+  def clear!
+    clear
+    @changed = true
+  end
+
   def load_for_update
     @lockfile.hold_for_update
     load
@@ -57,9 +62,27 @@ class Index
   end
 
   def add(pathname, oid, stat)
+    (1..3).each { |stage| remove_entry_with_stage(pathname, stage) }
+
     entry = Entry.create(pathname, oid, stat)
     discard_conflicts(entry)
     store_entry(entry)
+    @changed = true
+  end
+
+  def add_from_db(pathname, item)
+    store_entry(Entry.create_from_db(pathname, item, 0))
+    @changed = true
+  end
+
+  def add_conflict_set(pathname, items)
+    remove_entry_with_stage(pathname, 0)
+
+    items.each_with_index do |item, n|
+      next unless item
+      entry = Entry.create_from_db(pathname, item, n + 1)
+      store_entry(entry)
+    end
     @changed = true
   end
 
@@ -82,16 +105,34 @@ class Index
     end
   end
 
-  def entry_for_path(path)
-    @entries[path.to_s]
+  def conflict?
+    @entries.any? { |key, entry| entry.stage > 0 }
+  end
+
+  def conflict_paths
+    paths = Set.new
+    each_entry { |entry| paths.add(entry.path) unless entry.stage == 0 }
+    paths
+  end
+
+  def entry_for_path(path, stage = 0)
+    @entries[[path.to_s, stage]]
+  end
+
+  def child_paths(path)
+    @parents[path.to_s].to_a
   end
 
   def tracked_file?(path)
-    @entries.has_key?(path.to_s)
+    (0..3).any? { |stage| @entries.has_key?([path.to_s, stage]) }
+  end
+
+  def tracked_directory?(path)
+    @parents.has_key?(path.to_s)
   end
 
   def tracked?(path)
-    tracked_file?(path) or @parents.has_key?(path.to_s)
+    tracked_file?(path) or tracked_directory?(path)
   end
 
   private
@@ -109,7 +150,11 @@ class Index
   end
 
   def remove_entry(pathname)
-    entry = @entries[pathname.to_s]
+    (0..3).each { |stage| remove_entry_with_stage(pathname, stage) }
+  end
+
+  def remove_entry_with_stage(pathname, stage)
+    entry = @entries[[pathname.to_s, stage]]
     return unless entry
 
     @keys.delete(entry.key)

@@ -2,6 +2,7 @@ require "fileutils"
 require "pathname"
 
 require "command"
+require "editor"
 require "repository"
 
 module CommandHelper
@@ -51,24 +52,18 @@ module CommandHelper
     @env[key] = value
   end
 
-  def set_stdin(string)
-    @stdin = StringIO.new(string)
-  end
-
   def jit_cmd(*argv)
     @env    ||= {}
-    @stdin  ||= StringIO.new
     @stdout   = StringIO.new
     @stderr   = StringIO.new
 
-    @cmd = Command.execute(repo_path.to_s, @env, argv, @stdin, @stdout, @stderr)
+    @cmd = Command.execute(repo_path.to_s, @env, argv, @stdout, @stderr)
   end
 
-  def commit(message)
+  def commit(message, time = nil)
     set_env("GIT_AUTHOR_NAME", "A. U. Thor")
     set_env("GIT_AUTHOR_EMAIL", "author@example.com")
-    set_stdin(message)
-    jit_cmd("commit")
+    Time.stub(:now, time || Time.now) { jit_cmd "commit", "-m", message }
   end
 
   def assert_status(status)
@@ -92,6 +87,21 @@ module CommandHelper
     Revision.new(repo, expression).resolve
   end
 
+  def load_commit(expression)
+    repo.database.load(resolve_revision(expression))
+  end
+
+  def assert_index(contents)
+    files = {}
+    repo.index.load
+
+    repo.index.each_entry do |entry|
+      files[entry.path] = repo.database.load(entry.oid).data
+    end
+
+    assert_equal(contents, files)
+  end
+
   def assert_workspace(contents)
     files = {}
 
@@ -104,5 +114,17 @@ module CommandHelper
 
   def assert_noent(filename)
     refute File.exist?(repo_path.join(filename))
+  end
+
+  def assert_executable(filename)
+    assert File.executable?(repo_path.join(filename))
+  end
+
+  class FakeEditor
+    Editor.instance_methods(false).each { |m| define_method(m) { |*| } }
+  end
+
+  def stub_editor(message)
+    Editor.stub(:edit, message, FakeEditor.new) { yield }
   end
 end

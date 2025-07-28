@@ -1,6 +1,8 @@
+require "optparse"
 require "pathname"
 
 require_relative "../color"
+require_relative "../editor"
 require_relative "../pager"
 require_relative "../repository"
 
@@ -9,11 +11,10 @@ module Command
 
     attr_reader :status
 
-    def initialize(dir, env, args, stdin, stdout, stderr)
+    def initialize(dir, env, args, stdout, stderr)
       @dir    = dir
       @env    = env
       @args   = args
-      @stdin  = stdin
       @stdout = stdout
       @stderr = stderr
 
@@ -21,6 +22,7 @@ module Command
     end
 
     def execute
+      parse_options
       catch(:exit) { run }
 
       if defined? @pager
@@ -39,12 +41,34 @@ module Command
       Pathname.new(File.expand_path(path, @dir))
     end
 
+    def parse_options
+      @options = {}
+      @parser  = OptionParser.new
+
+      define_options
+      @parser.parse!(@args)
+    end
+
+    def define_options
+    end
+
     def setup_pager
       return if defined? @pager
       return unless @isatty
 
       @pager  = Pager.new(@env, @stdout, @stderr)
       @stdout = @pager.input
+    end
+
+    def edit_file(path)
+      Editor.edit(path, editor_command) do |editor|
+        yield editor
+        editor.close unless @isatty
+      end
+    end
+
+    def editor_command
+      @env["GIT_EDITOR"] || @env["VISUAL"] || @env["EDITOR"]
     end
 
     def fmt(style, string)

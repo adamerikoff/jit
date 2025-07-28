@@ -1,4 +1,5 @@
 require "digest/sha1"
+require "pathname"
 require "strscan"
 require "zlib"
 
@@ -8,6 +9,8 @@ require_relative "./database/commit"
 require_relative "./database/entry"
 require_relative "./database/tree"
 require_relative "./database/tree_diff"
+
+require_relative "./path_filter"
 
 class Database
   TEMP_CHARS = ("a".."z").to_a + ("A".."Z").to_a + ("0".."9").to_a
@@ -38,6 +41,36 @@ class Database
     @objects[oid] ||= read_object(oid)
   end
 
+  def load_tree_entry(oid, pathname)
+    commit = load(oid)
+    root   = Database::Entry.new(commit.tree, Tree::TREE_MODE)
+
+    return root unless pathname
+
+    pathname.each_filename.reduce(root) do |entry, name|
+      entry ? load(entry.oid).entries[name] : nil
+    end
+  end
+
+  def load_tree_list(oid, pathname = nil)
+    return {} unless oid
+
+    entry = load_tree_entry(oid, pathname)
+    list  = {}
+
+    build_list(list, entry, pathname || Pathname.new(""))
+    list
+  end
+
+  def build_list(list, entry, prefix)
+    return unless entry
+    return list[prefix.to_s] = entry unless entry.tree?
+
+    load(entry.oid).entries.each do |name, item|
+      build_list(list, item, prefix.join(name))
+    end
+  end
+
   def short_oid(oid)
     oid[0..6]
   end
@@ -54,9 +87,9 @@ class Database
     []
   end
 
-  def tree_diff(a, b)
+  def tree_diff(a, b, filter = PathFilter.new)
     diff = TreeDiff.new(self)
-    diff.compare_oids(a, b)
+    diff.compare_oids(a, b, filter)
     diff.changes
   end
 

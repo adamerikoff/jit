@@ -29,6 +29,13 @@ class Index
         oid, flags, path)
     end
 
+    def self.create_from_db(pathname, item, n)
+      path  = pathname.to_s
+      flags = (n << 12) | [path.bytesize, MAX_PATH_SIZE].min
+
+      Entry.new(0, 0, 0, 0, 0, 0, item.mode, 0, 0, 0, item.oid, flags, path)
+    end
+
     def self.mode_for_stat(stat)
       stat.executable? ? EXECUTABLE_MODE : REGULAR_MODE
     end
@@ -38,7 +45,11 @@ class Index
     end
 
     def key
-      path
+      [path, stage]
+    end
+
+    def stage
+      (flags >> 12) & 0x3
     end
 
     def parent_directories

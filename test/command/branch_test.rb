@@ -125,5 +125,52 @@ describe Command::Branch do
         fatal: Not a valid object name: '#{ tree_id }^^'.
       ERROR
     end
+
+    it "lists existing branches" do
+      jit_cmd "branch", "new-feature"
+      jit_cmd "branch"
+
+      assert_stdout <<~BRANCH
+        * master
+          new-feature
+      BRANCH
+    end
+
+    it "lists existing branches with verbose info" do
+      a = load_commit("@^")
+      b = load_commit("@")
+
+      jit_cmd "branch", "new-feature", "@^"
+      jit_cmd "branch", "--verbose"
+
+      assert_stdout <<~BRANCH
+        * master      #{ repo.database.short_oid(b.oid) } third
+          new-feature #{ repo.database.short_oid(a.oid) } second
+      BRANCH
+    end
+
+    it "deletes a branch" do
+      head = repo.refs.read_head
+
+      jit_cmd "branch", "bug-fix"
+      jit_cmd "branch", "-D", "bug-fix"
+
+      assert_stdout <<~MSG
+        Deleted branch bug-fix (was #{ repo.database.short_oid(head) }).
+      MSG
+
+      branches = repo.refs.list_branches
+      refute_includes branches.map(&:short_name), "bug-fix"
+    end
+
+    it "fails to delete a non-existent branch" do
+      jit_cmd "branch", "-D", "no-such-branch"
+
+      assert_status 1
+
+      assert_stderr <<~ERROR
+        error: branch 'no-such-branch' not found.
+      ERROR
+    end
   end
 end

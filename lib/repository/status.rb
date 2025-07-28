@@ -1,4 +1,3 @@
-require "pathname"
 require "set"
 
 require_relative "./inspector"
@@ -11,10 +10,11 @@ class Repository
                 :stats,
                 :head_tree,
                 :index_changes,
+                :conflicts,
                 :workspace_changes,
                 :untracked_files
 
-    def initialize(repository)
+    def initialize(repository, commit_oid = nil)
       @repo  = repository
       @stats = {}
 
@@ -22,11 +22,14 @@ class Repository
 
       @changed           = SortedSet.new
       @index_changes     = SortedHash.new
+      @conflicts         = SortedHash.new
       @workspace_changes = SortedHash.new
       @untracked_files   = SortedSet.new
 
+      commit_oid ||= @repo.refs.read_head
+      @head_tree   = @repo.database.load_tree_list(commit_oid)
+
       scan_workspace
-      load_head_tree
       check_index_entries
       collect_deleted_head_files
     end
@@ -50,33 +53,16 @@ class Repository
       end
     end
 
-    def load_head_tree
-      @head_tree = {}
-
-      head_oid = @repo.refs.read_head
-      return unless head_oid
-
-      commit = @repo.database.load(head_oid)
-      read_tree(commit.tree)
-    end
-
-    def read_tree(tree_oid, pathname = Pathname.new(""))
-      tree = @repo.database.load(tree_oid)
-
-      tree.entries.each do |name, entry|
-        path = pathname.join(name)
-        if entry.tree?
-          read_tree(entry.oid, path)
-        else
-          @head_tree[path.to_s] = entry
-        end
-      end
-    end
-
     def check_index_entries
       @repo.index.each_entry do |entry|
-        check_index_against_workspace(entry)
-        check_index_against_head_tree(entry)
+        if entry.stage == 0
+          check_index_against_workspace(entry)
+          check_index_against_head_tree(entry)
+        else
+          @changed.add(entry.path)
+          @conflicts[entry.path] ||= []
+          @conflicts[entry.path].push(entry.stage)
+        end
       end
     end
 
